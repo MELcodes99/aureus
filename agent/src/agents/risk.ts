@@ -58,7 +58,8 @@ export async function risk(snap: Snapshot, proposal: Proposal, g: ReturnType<typ
     proposal,
     market: snap.market,
     stableSymbols: stables,
-    guard: { drawdownPct: g.drawdownPct, maxDrawdownPct: g.limits.maxDrawdownPct, paused: g.paused },
+    // Strings with "%" so the model cannot misread 0.04 (percent) as 4%.
+    guard: { drawdownFromPeak: `${g.drawdownPct}%`, killSwitchAt: `${g.limits.maxDrawdownPct}%`, paused: g.paused },
   }, Review);
 
   // The LLM may only reduce risk: never accept a risky weight above what the strategist proposed.
