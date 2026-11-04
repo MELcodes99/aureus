@@ -36,11 +36,22 @@ const ORIGINS = (env.AUREUS_ALLOWED_ORIGINS ?? "").split(",").map((s) => s.trim(
 const TOKEN = env.AUREUS_DASHBOARD_TOKEN || (ON_HOST ? "" : randomBytes(24).toString("hex"));
 if (!TOKEN || TOKEN.length < 24) throw new Error("set AUREUS_DASHBOARD_TOKEN (at least 24 characters, e.g. openssl rand -hex 24)");
 
-function authorised(req: IncomingMessage): boolean {
+// Optional read-only token for judges and guests: can view and disclose, cannot pause, resume, anchor or run cycles.
+const VIEWER = env.AUREUS_VIEWER_TOKEN ?? "";
+if (VIEWER && VIEWER.length < 24) throw new Error("AUREUS_VIEWER_TOKEN must be at least 24 characters");
+if (VIEWER && VIEWER === TOKEN) throw new Error("AUREUS_VIEWER_TOKEN must differ from AUREUS_DASHBOARD_TOKEN");
+
+function tokenIs(got: Buffer, token: string): boolean {
+  const want = Buffer.from(token);
+  return got.length === want.length && timingSafeEqual(got, want);
+}
+
+function role(req: IncomingMessage): "owner" | "viewer" | null {
   const h = req.headers.authorization ?? "";
   const got = Buffer.from(h.startsWith("Bearer ") ? h.slice(7) : "");
-  const want = Buffer.from(TOKEN);
-  return got.length === want.length && timingSafeEqual(got, want);
+  if (tokenIs(got, TOKEN)) return "owner";
+  if (VIEWER && tokenIs(got, VIEWER)) return "viewer";
+  return null;
 }
 
 function send(res: ServerResponse, code: number, body: unknown) {
@@ -261,7 +272,11 @@ async function route(req: IncomingMessage, res: ServerResponse) {
   const m = req.method ?? "GET";
 
   if (m === "GET" && (p === "/api/health" || p === "/")) return send(res, 200, { ok: true, service: "aureus" });
-  if (!authorised(req)) return send(res, 401, { error: "missing or wrong token" });
+  const who = role(req);
+  if (!who) return send(res, 401, { error: "missing or wrong token" });
+  if (m === "GET" && p === "/api/whoami") return send(res, 200, { role: who });
+  const ownerOnly = m === "POST" && ["/api/cycle", "/api/pause", "/api/resume", "/api/anchor"].includes(p);
+  if (ownerOnly && who !== "owner") return send(res, 403, { error: "read-only access: only the owner can do this" });
 
   if (m === "GET" && p === "/api/status") return send(res, 200, await status());
   if (m === "GET" && p === "/api/cycle/last") return send(res, 200, readOr("last-cycle.json", null));
