@@ -1,0 +1,28 @@
+{
+  "name": "aureus-agent",
+  "version": "1.0.0",
+  "description": "AUREUS agent swarm: private AI portfolio management on NEAR",
+  "scripts": {
+    "cycle": "tsx src/cli.ts cycle",
+    "status": "tsx src/cli.ts status",
+    "disclose": "tsx src/cli.ts disclose",
+    "run": "tsx src/cli.ts run",
+    "demo": "AUREUS_MODE=mock tsx src/cli.ts cycle",
+    "test": "AUREUS_MODE=mock tsx --test test/*.test.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@defuse-protocol/intents-sdk": "^0.95.0",
+    "dotenv": "^18.0.9",
+    "ethers": "^6.17.0",
+    "near-api-js": "^7.4.0",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.3"
+  },
+  "type": "module"
+}

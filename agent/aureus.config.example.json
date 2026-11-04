@@ -1,0 +1,51 @@
+{
+  "mandate": {
+    "objective": "Grow capital over 6-12 months while keeping a stablecoin cushion. Prefer NEAR ecosystem exposure, cut risk fast in drawdowns.",
+    "riskProfile": "balanced",
+    "maxSingleAssetWeight": 0.5,
+    "minStableWeight": 0.25,
+    "rebalanceThreshold": 0.05,
+    "minTradeUsd": 1
+  },
+  "universe": [
+    {
+      "symbol": "USDC",
+      "contract": "17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1",
+      "decimals": 6,
+      "stable": true
+    },
+    {
+      "symbol": "USDT",
+      "contract": "usdt.tether-token.near",
+      "decimals": 6,
+      "stable": true,
+      "optional": true
+    },
+    {
+      "symbol": "wNEAR",
+      "contract": "wrap.near",
+      "decimals": 24
+    },
+    {
+      "symbol": "ETH",
+      "contract": "aurora",
+      "decimals": 18,
+      "optional": true
+    },
+    {
+      "symbol": "BTC",
+      "contract": "nbtc.bridge.near",
+      "decimals": 8,
+      "optional": true
+    }
+  ],
+  "limits": {
+    "maxTradeUsd": 150,
+    "maxDailyUsd": 400,
+    "cooldownMinutes": 0,
+    "maxDrawdownPct": 15,
+    "gasReserveNear": 0.5
+  },
+  "slippageBps": 100,
+  "custody": "wallet"
+}

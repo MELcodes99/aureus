@@ -1,0 +1,24 @@
+[package]
+name = "aureus-vault"
+version = "0.1.0"
+edition = "2021"
+description = "AUREUS policy vault: owner-set risk limits and private decision commitments for an autonomous AI portfolio manager on NEAR"
+license = "MIT"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+near-sdk = "5"
+hex = "0.4"
+
+[dev-dependencies]
+near-sdk = { version = "5", features = ["unit-testing"] }
+
+[profile.release]
+codegen-units = 1
+opt-level = "z"
+lto = true
+debug = false
+panic = "abort"
+overflow-checks = true
