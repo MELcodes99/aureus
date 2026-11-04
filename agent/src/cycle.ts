@@ -1,7 +1,7 @@
 /**
  * One AUREUS cycle: Scout -> Guard (drawdown) -> Strategist -> Risk -> Allocator -> Executor.
  */
-import { mkdirSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { config } from "./config.ts";
@@ -44,6 +44,13 @@ export async function runCycle(log: (s: string) => void = console.log, opts: { d
     mkdirSync(config.dataDir, { recursive: true });
     r.log = lines;
     writeFileSync(join(config.dataDir, "last-cycle.json"), JSON.stringify(r, (_, v) => (typeof v === "bigint" ? v.toString() : v), 2));
+    // One compact line per cycle: the dashboard's NAV chart and cycle timeline.
+    appendFileSync(join(config.dataDir, "cycles.jsonl"), JSON.stringify({
+      cycleId: r.cycleId, at: r.at, dryRun: !r.sendsMoney, navUsd: r.navUsd ?? null, drawdownPct: r.drawdownPct ?? null,
+      halted: r.halted ?? null, thesis: r.thesis ?? null, confidence: r.confidence ?? null, holdings: r.holdings ?? [],
+      targetWeights: r.targetWeights ?? {}, concerns: r.concerns ?? [],
+      results: (r.results ?? []).map((x) => ({ from: x.from, to: x.to, usd: x.usd, status: x.status, error: x.error ?? null, txHash: x.txHash ?? null })),
+    }) + "\n");
     return r;
   };
 

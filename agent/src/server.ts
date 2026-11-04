@@ -104,6 +104,8 @@ async function status() {
     execute: config.execute,
     autorunMinutes: AUTORUN_MIN || null,
     lastAutorun,
+    cycleRunning: busy,
+    nextCycleAt: nextTickAt,
     navUsd: +navUsd.toFixed(2),
     drawdownPct: g.drawdownPct,
     maxDrawdownPct: config.limits.maxDrawdownPct,
@@ -129,6 +131,27 @@ function trades() {
     commitment: e.commitment,
     anchorTx: e.kind === "intent" ? journal.anchorFor(e.commitment)?.txHash ?? null : null,
   }));
+}
+
+function readJsonl(name: string): any[] {
+  if (!existsSync(dataFile(name))) return [];
+  return readFileSync(dataFile(name), "utf8").trim().split("\n").filter(Boolean).map((l) => JSON.parse(l));
+}
+
+/** Past cycles, newest first. */
+function cycles(limit: number) {
+  return readJsonl("cycles.jsonl").reverse().slice(0, limit);
+}
+
+/** NAV over time, oldest first, for the chart. */
+function navSeries() {
+  return readJsonl("cycles.jsonl").filter((c) => typeof c.navUsd === "number").map((c) => ({ at: c.at, navUsd: c.navUsd, drawdownPct: c.drawdownPct }));
+}
+
+/** Price history recorded by the scout each cycle: [{ at, prices: { SYMBOL: usd } }]. */
+function prices(limit: number) {
+  const all = readOr<{ at: string; prices: Record<string, number> }[]>("prices.json", []);
+  return all.slice(-limit);
 }
 
 function anchors() {
@@ -205,10 +228,12 @@ async function anchorNow() {
 const AUTORUN_MIN = Number(env.AUREUS_AUTORUN_MINUTES ?? 0);
 const ANCHOR_HOURS = Number(env.AUREUS_ANCHOR_EVERY_HOURS ?? 24);
 let lastAutorun: { at: string; message: string } | null = null;
+let nextTickAt: string | null = null;
 
 function startLoop() {
   if (!AUTORUN_MIN) return;
   const tick = async () => {
+    nextTickAt = new Date(Date.now() + AUTORUN_MIN * 60_000).toISOString();
     try {
       const out = await cycle(false);
       lastAutorun = { at: new Date().toISOString(), message: out.message };
@@ -220,8 +245,11 @@ function startLoop() {
       console.error(`[loop] ${(e as Error).message}`);
     }
   };
-  setTimeout(tick, 15_000);
-  setInterval(tick, AUTORUN_MIN * 60_000);
+  nextTickAt = new Date(Date.now() + 15_000).toISOString();
+  setTimeout(() => {
+    void tick();
+    setInterval(() => void tick(), AUTORUN_MIN * 60_000);
+  }, 15_000);
   console.log(`[loop] autonomous cycle every ${AUTORUN_MIN} min, ${config.execute ? "LIVE EXECUTION" : "dry (quotes only)"}, anchor every ${ANCHOR_HOURS} h`);
 }
 
@@ -239,6 +267,9 @@ async function route(req: IncomingMessage, res: ServerResponse) {
   if (m === "GET" && p === "/api/cycle/last") return send(res, 200, readOr("last-cycle.json", null));
   if (m === "GET" && p === "/api/trades") return send(res, 200, trades());
   if (m === "GET" && p === "/api/anchors") return send(res, 200, anchors());
+  if (m === "GET" && p === "/api/cycles") return send(res, 200, cycles(Math.min(200, Number(url.searchParams.get("limit") ?? 50))));
+  if (m === "GET" && p === "/api/nav") return send(res, 200, navSeries());
+  if (m === "GET" && p === "/api/prices") return send(res, 200, prices(Math.min(500, Number(url.searchParams.get("limit") ?? 200))));
   if (m === "GET" && p === "/api/attestation") return send(res, 200, await attestation());
   const d = p.match(/^\/api\/disclose\/(\d+)$/);
   if (m === "POST" && d) {
