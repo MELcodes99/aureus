@@ -32,9 +32,11 @@ export interface CycleContext {
   thesis: string;
   riskConcerns: string[];
   proofs: InferenceProof[];
+  /** Force quotes only for this run, whatever AUREUS_EXECUTE says (dashboard "Run dry cycle"). */
+  dryRun?: boolean;
 }
 
-const sendsMoney = () => config.mode === "mock" || config.execute;
+const sendsMoney = (ctx: CycleContext) => !ctx.dryRun && (config.mode === "mock" || config.execute);
 
 async function waitForSwap(depositAddress: string): Promise<string> {
   const end = Date.now() + (config.mode === "mock" ? 0 : 180_000);
@@ -58,7 +60,7 @@ export async function execute(trade: PlannedTrade, ctx: CycleContext): Promise<E
   } catch (e) {
     return { trade, quote: preview.quote, status: "blocked", error: (e as Error).message };
   }
-  if (!sendsMoney()) return { trade, quote: preview.quote, status: "previewed" };
+  if (!sendsMoney(ctx)) return { trade, quote: preview.quote, status: "previewed" };
 
   const isPrivate = config.custody === "confidential";
   // The wallet must be able to receive the bought token, or the payout bounces into a refund.

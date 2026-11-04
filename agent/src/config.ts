@@ -52,9 +52,15 @@ export type FileConfig = z.infer<typeof FileConfig>;
 
 const env = process.env;
 const mode = (env.AUREUS_MODE ?? "mock") as "mock" | "live";
-const cfgPath = resolve(env.AUREUS_CONFIG ?? "aureus.config.json");
-if (!existsSync(cfgPath)) throw new Error(`config not found: ${cfgPath} (copy aureus.config.example.json)`);
-const file = FileConfig.parse(JSON.parse(readFileSync(cfgPath, "utf8")));
+// On a host (e.g. Render) the mandate comes from the AUREUS_CONFIG_JSON secret instead of a file,
+// so your strategy is never committed to the repo.
+function loadConfigJson(): unknown {
+  if (env.AUREUS_CONFIG_JSON) return JSON.parse(env.AUREUS_CONFIG_JSON);
+  const cfgPath = resolve(env.AUREUS_CONFIG ?? "aureus.config.json");
+  if (!existsSync(cfgPath)) throw new Error(`config not found: ${cfgPath} (copy aureus.config.example.json, or set AUREUS_CONFIG_JSON)`);
+  return JSON.parse(readFileSync(cfgPath, "utf8"));
+}
+const file = FileConfig.parse(loadConfigJson());
 
 function need(name: string): string {
   const v = env[name];

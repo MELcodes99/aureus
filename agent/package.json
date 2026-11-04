@@ -9,7 +9,9 @@
     "run": "tsx src/cli.ts run",
     "demo": "AUREUS_MODE=mock tsx src/cli.ts cycle",
     "test": "AUREUS_MODE=mock tsx --test test/*.test.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "serve": "tsx src/cli.ts serve",
+    "start": "tsx src/cli.ts serve"
   },
   "license": "MIT",
   "dependencies": {
@@ -17,12 +19,15 @@
     "dotenv": "^18.0.9",
     "ethers": "^6.17.0",
     "near-api-js": "^7.4.0",
-    "zod": "^4.6.7"
+    "zod": "^4.6.7",
+    "tsx": "^4.23.15"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",
-    "tsx": "^4.23.15",
     "typescript": "^5.9.3"
   },
-  "type": "module"
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  }
 }

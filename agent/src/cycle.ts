@@ -30,13 +30,19 @@ export interface CycleReport {
   skipped?: string[];
   results?: Array<Omit<ExecutionResult, "trade"> & { from: string; to: string; usd: number; clippedBy?: string }>;
   proofs?: InferenceProof[];
+  /** The cycle's log lines, for the dashboard's activity feed. */
+  log?: string[];
 }
 
-export async function runCycle(log: (s: string) => void = console.log): Promise<CycleReport> {
+export async function runCycle(log: (s: string) => void = console.log, opts: { dryRun?: boolean } = {}): Promise<CycleReport> {
   const cycleId = randomUUID();
-  const report: CycleReport = { cycleId, at: new Date().toISOString(), mode: config.mode, sendsMoney: config.mode === "mock" || config.execute };
+  const lines: string[] = [];
+  const print = log;
+  log = (s: string) => { lines.push(s); print(s); };
+  const report: CycleReport = { cycleId, at: new Date().toISOString(), mode: config.mode, sendsMoney: !opts.dryRun && (config.mode === "mock" || config.execute) };
   const done = (r: CycleReport) => {
     mkdirSync(config.dataDir, { recursive: true });
+    r.log = lines;
     writeFileSync(join(config.dataDir, "last-cycle.json"), JSON.stringify(r, (_, v) => (typeof v === "bigint" ? v.toString() : v), 2));
     return r;
   };
@@ -96,7 +102,7 @@ export async function runCycle(log: (s: string) => void = console.log): Promise<
   report.results = [];
   for (const t of trades) {
     log(`[executor] ${t.from.symbol} -> ${t.to.symbol} $${t.usd.toFixed(2)}${t.clippedBy ? ` (clipped by ${t.clippedBy})` : ""}, confidential route`);
-    const res = await execute(t, { cycleId, thesis: s.data.thesis, riskConcerns: r.review.concerns, proofs });
+    const res = await execute(t, { cycleId, thesis: s.data.thesis, riskConcerns: r.review.concerns, proofs, dryRun: opts.dryRun });
     const { trade, ...rest } = res;
     report.results.push({ ...rest, from: trade.from.symbol, to: trade.to.symbol, usd: +trade.usd.toFixed(2), clippedBy: trade.clippedBy });
     if (res.status === "executed" && config.custody === "confidential") log(`[executor] private intent ${res.txHash} swap ${res.swapStatus}; nothing published onchain. commitment ${res.commitment?.slice(0, 16)}... kept in your journal`);

@@ -74,6 +74,24 @@ near account delete-keys ${config.mode === "live" ? config.near.walletId : "<YOU
 After that the agent cannot sign anything. Your funds stay in your wallet.`);
       break;
     }
+    case "serve": {
+      const { start } = await import("./server.ts");
+      start();
+      return;
+    }
+    case "export-state": {
+      // Bundle the journal and state for a host's AUREUS_SEED_B64. Memos stay AES-encrypted;
+      // the host also needs the same AUREUS_JOURNAL_KEY to disclose them. Session tokens are excluded.
+      const { existsSync, readFileSync } = await import("node:fs");
+      const { join } = await import("node:path");
+      const names = ["journal.jsonl", "anchors.jsonl", "guard.json", "prices.json", "public.json", "last-cycle.json"];
+      const bundle: Record<string, string> = {};
+      for (const n of names) if (existsSync(join(config.dataDir, n))) bundle[n] = readFileSync(join(config.dataDir, n), "utf8");
+      const b64 = Buffer.from(JSON.stringify(bundle)).toString("base64");
+      console.error(`files: ${Object.keys(bundle).join(", ")}  (${b64.length} chars)`);
+      console.log(b64);
+      break;
+    }
     case "cycle": {
       banner();
       await runCycle();
@@ -275,6 +293,9 @@ After that the agent cannot sign anything. Your funds stay in your wallet.`);
       console.log(`usage: tsx src/cli.ts <command>
 
   agent-key            generate the agent's key and show how to add it to your wallet
+  serve                local API for the dashboard (127.0.0.1 only, token-protected, cannot trade)
+  export-state         print your journal and state as one base64 value for a host's AUREUS_SEED_B64
+  serve                API for the dashboard + optional autonomous loop (token-protected; the API itself cannot trade)
   cycle                run one cycle
   run [minutes]        run forever, one cycle every N minutes (default 15)
   status               wallet balances, guard state, recent trades
