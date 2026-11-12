@@ -36,8 +36,9 @@ How to decide:
    or the book breaks the mandate. Do not move a target by less than rebalanceThreshold without a reason.
 5. Stables: keep the stable share in stables already held unless diversifying depeg risk is worth a swap.
 
-Rules: weights are fractions that sum to 1; only use symbols from the market list;
-respect minStableWeight and maxSingleAssetWeight.
+Rules: weights are fractions that sum to 1; only use symbols from the market list.
+maxSingleAssetWeight caps each NON-stable asset only. Stablecoins are exempt from it: USDC at 40% is fine.
+minStableWeight is a floor on all stablecoins combined. Never trade one stablecoin for another to meet a cap.
 Return {"targetWeights":{SYMBOL:number},"thesis":string,"confidence":0..1,"signals":[string],
 "notes":{SYMBOL:string}}. thesis: 2-4 sentences citing the numbers that drove the decision.
 notes: one short plain-English sentence per symbol explaining its weight, citing a number where possible.`;
