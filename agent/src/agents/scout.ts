@@ -9,13 +9,17 @@ import { config } from "../config.ts";
 import { listTokens, resolveAssets, type ResolvedAsset } from "../intents.ts";
 import { wallet } from "../wallet.ts";
 import * as confidential from "../confidential.ts";
+import { marketContext, type MarketContext } from "../market.ts";
 
 export interface MarketAsset {
   symbol: string;
   stable: boolean;
   price: number;
+  /** From the scout's own recent samples (last few cycles). */
   momentumPct: number | null;
   volatilityPct: number | null;
+  /** Multi-day trend, volume and range from public market data (null if unavailable). */
+  context: MarketContext | null;
 }
 export interface Holding {
   asset: ResolvedAsset;
@@ -54,6 +58,7 @@ export async function scout(): Promise<Snapshot> {
   const history = loadHistory();
   const now = { at: new Date().toISOString(), prices: Object.fromEntries(assets.map((a) => [a.symbol, a.price])) };
 
+  const ctx = await marketContext(assets.map((a) => a.symbol));
   const market: MarketAsset[] = assets.map((a) => {
     const series = [...history.map((h) => h.prices[a.symbol]).filter((p) => p !== undefined), a.price];
     const past = series.length > 1 ? series[Math.max(0, series.length - 1 - LOOKBACK)] : null;
@@ -66,6 +71,7 @@ export async function scout(): Promise<Snapshot> {
       price: a.price,
       momentumPct: past ? +((a.price / past - 1) * 100).toFixed(2) : null,
       volatilityPct: vol === null ? null : +(vol * 100).toFixed(2),
+      context: ctx[a.symbol] ?? null,
     };
   });
   saveHistory([...history, now]);

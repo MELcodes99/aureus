@@ -28,7 +28,9 @@ export interface CycleReport {
   concerns?: string[];
   targetWeights?: Record<string, number>;
   skipped?: string[];
-  results?: Array<Omit<ExecutionResult, "trade"> & { from: string; to: string; usd: number; clippedBy?: string }>;
+  results?: Array<Omit<ExecutionResult, "trade"> & { from: string; to: string; usd: number; clippedBy?: string; reason?: string }>;
+  /** The Strategist's one-line reason per asset. */
+  notes?: Record<string, string>;
   proofs?: InferenceProof[];
   /** The cycle's log lines, for the dashboard's activity feed. */
   log?: string[];
@@ -48,8 +50,8 @@ export async function runCycle(log: (s: string) => void = console.log, opts: { d
     appendFileSync(join(config.dataDir, "cycles.jsonl"), JSON.stringify({
       cycleId: r.cycleId, at: r.at, dryRun: !r.sendsMoney, navUsd: r.navUsd ?? null, drawdownPct: r.drawdownPct ?? null,
       halted: r.halted ?? null, thesis: r.thesis ?? null, confidence: r.confidence ?? null, holdings: r.holdings ?? [],
-      targetWeights: r.targetWeights ?? {}, concerns: r.concerns ?? [],
-      results: (r.results ?? []).map((x) => ({ from: x.from, to: x.to, usd: x.usd, status: x.status, error: x.error ?? null, txHash: x.txHash ?? null })),
+      targetWeights: r.targetWeights ?? {}, concerns: r.concerns ?? [], notes: r.notes ?? {},
+      results: (r.results ?? []).map((x) => ({ from: x.from, to: x.to, usd: x.usd, status: x.status, reason: x.reason ?? null, error: x.error ?? null, txHash: x.txHash ?? null })),
     }) + "\n");
     return r;
   };
@@ -92,6 +94,8 @@ export async function runCycle(log: (s: string) => void = console.log, opts: { d
   }
   log(`[strategist] answered in ${((Date.now() - t0) / 1000).toFixed(0)} s`);
   log(`[strategist] ${s.data.thesis} (confidence ${s.data.confidence})`);
+  for (const [sym, note] of Object.entries(s.data.notes)) log(`[strategist] ${sym}: ${note}`);
+  report.notes = s.data.notes;
 
   log(`[risk] ${config.mode === "mock" ? "simulated review" : "private review in TEE"} + mandate guard`);
   let r;
@@ -113,7 +117,7 @@ export async function runCycle(log: (s: string) => void = console.log, opts: { d
   let { trades, skipped } = allocate(snap, r.finalWeights, r.review.sizeMultiplier, {
     maxTradeUsd: config.limits.maxTradeUsd,
     remainingTodayUsd: g.remainingTodayUsd,
-  });
+  }, s.data.notes);
   if (config.limits.cooldownMinutes > 0 && trades.length > 1) {
     skipped.push(`${trades.length - 1} trade(s) deferred: ${config.limits.cooldownMinutes} min cooldown allows one per cycle`);
     trades = trades.slice(0, 1);
@@ -125,9 +129,10 @@ export async function runCycle(log: (s: string) => void = console.log, opts: { d
   report.results = [];
   for (const t of trades) {
     log(`[executor] ${t.from.symbol} -> ${t.to.symbol} $${t.usd.toFixed(2)}${t.clippedBy ? ` (clipped by ${t.clippedBy})` : ""}, confidential route`);
+    log(`[executor] why: ${t.reason}`);
     const res = await execute(t, { cycleId, thesis: s.data.thesis, riskConcerns: r.review.concerns, proofs, dryRun: opts.dryRun });
     const { trade, ...rest } = res;
-    report.results.push({ ...rest, from: trade.from.symbol, to: trade.to.symbol, usd: +trade.usd.toFixed(2), clippedBy: trade.clippedBy });
+    report.results.push({ ...rest, from: trade.from.symbol, to: trade.to.symbol, usd: +trade.usd.toFixed(2), clippedBy: trade.clippedBy, reason: trade.reason });
     if (res.status === "executed" && config.custody === "confidential") log(`[executor] private intent ${res.txHash} swap ${res.swapStatus}; nothing published onchain. commitment ${res.commitment?.slice(0, 16)}... kept in your journal`);
     else if (res.status === "executed") log(`[executor] tx ${res.txHash} swap ${res.swapStatus}; onchain memo aureus:${res.commitment?.slice(0, 16)}...`);
     else if (res.status === "previewed") log(`[executor] dry quote: ~${res.quote?.amountOutFormatted} ${t.to.symbol} (set AUREUS_EXECUTE=true to trade)`);

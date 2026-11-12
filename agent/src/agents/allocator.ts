@@ -15,11 +15,20 @@ export interface PlannedTrade {
   clippedBy?: string;
 }
 
+/** Why this swap: the Strategist's own words for both sides, or the plain drift fallback. */
+function reasonFor(from: string, to: string, notes: Record<string, string>): string {
+  const sell = notes[from]?.trim();
+  const buy = notes[to]?.trim();
+  if (!sell && !buy) return `${from} overweight, ${to} underweight`;
+  return [sell && `Sell ${from}: ${sell}`, buy && `Buy ${to}: ${buy}`].filter(Boolean).join(" ");
+}
+
 export function allocate(
   snap: Snapshot,
   target: Record<string, number>,
   sizeMultiplier: number,
   budget: { maxTradeUsd: number; remainingTodayUsd: number },
+  notes: Record<string, string> = {},
 ): { trades: PlannedTrade[]; skipped: string[] } {
   const m = config.mandate;
   const skipped: string[] = [];
@@ -52,7 +61,7 @@ export function allocate(
         skipped.push(`${s.a.symbol}->${b.a.symbol} $${usd.toFixed(2)} below minimum${clippedBy ? ` after ${clippedBy}` : ""}`);
         continue;
       }
-      trades.push({ from: s.a, to: b.a, usd, amount, clippedBy, reason: `${s.a.symbol} overweight, ${b.a.symbol} underweight` });
+      trades.push({ from: s.a, to: b.a, usd, amount, clippedBy, reason: reasonFor(s.a.symbol, b.a.symbol, notes) });
       remaining -= usd;
       s.units -= amount;
       s.usd -= usd / sizeMultiplier;

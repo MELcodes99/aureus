@@ -13,14 +13,34 @@ export const Proposal = z.object({
   thesis: z.string().min(1),
   confidence: z.number().min(0).max(1),
   signals: z.array(z.string()).default([]),
+  /** One plain sentence per asset saying why it gets its weight. Shown next to each trade. */
+  notes: z.record(z.string(), z.string()).default({}),
 });
 export type Proposal = z.infer<typeof Proposal>;
 
 const SYSTEM = `You are the Strategist in AUREUS, a private autonomous portfolio manager on NEAR.
 Given the owner's mandate, market data and current holdings, propose target portfolio weights.
+
+Market data per asset:
+- context.change24hPct / change7dPct / change30dPct: multi-day trend from public market data
+- context.range24hPct: today's high-low range as % of price (a daily volatility gauge)
+- momentumPct / volatilityPct: the agent's own samples over the last few cycles (short-term noise)
+Any field may be null; never invent a number that is null.
+
+How to decide:
+1. Trend: favour risk assets whose 7d and 30d trends agree and are positive; cut ones where both are negative.
+   A 24h move against a clear 7d/30d trend is usually noise.
+2. Volatility: size inversely to range24hPct. A wild asset gets less weight than a calm one with the same trend.
+3. Regime: if most risk assets trend down on 7d and 30d, raise stables above the minimum. If most trend up, stay near it.
+4. Churn: trades cost spread and fees. Keep a current weight unless the case to move it is clear,
+   or the book breaks the mandate. Do not move a target by less than rebalanceThreshold without a reason.
+5. Stables: keep the stable share in stables already held unless diversifying depeg risk is worth a swap.
+
 Rules: weights are fractions that sum to 1; only use symbols from the market list;
-respect minStableWeight and maxSingleAssetWeight; prefer doing nothing over churn.
-Return {"targetWeights":{SYMBOL:number},"thesis":string,"confidence":0..1,"signals":[string]}.`;
+respect minStableWeight and maxSingleAssetWeight.
+Return {"targetWeights":{SYMBOL:number},"thesis":string,"confidence":0..1,"signals":[string],
+"notes":{SYMBOL:string}}. thesis: 2-4 sentences citing the numbers that drove the decision.
+notes: one short plain-English sentence per symbol explaining its weight, citing a number where possible.`;
 
 export async function strategist(snap: Snapshot) {
   return privateJson("strategist", SYSTEM, {

@@ -89,6 +89,9 @@ export function mockLlm(role: string, input: any): unknown {
         : `Momentum favours ${leader?.symbol}. Tilt risk budget toward it, keep the ${Math.round(stableW * 100)}% stable floor.`,
       confidence: bearish ? 0.7 : 0.6,
       signals: risky.map((a: any) => `${a.symbol} momentum ${(a.momentumPct ?? 0).toFixed(1)}%`),
+      notes: Object.fromEntries(market.map((a: any) => [a.symbol, a.stable
+        ? (a === home ? `Holds the ${Math.round(stableW * 100)}% stable cushion.` : "Not needed; the cushion stays in the stable already held.")
+        : `Momentum ${(a.momentumPct ?? 0).toFixed(1)}%, volatility ${(a.volatilityPct ?? 0).toFixed(1)}%, sized by score.`])),
     };
   }
   if (role === "risk") {
