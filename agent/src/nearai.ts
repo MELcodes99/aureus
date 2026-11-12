@@ -35,6 +35,7 @@ let cachedAttestation: Attestation | null = null;
 async function api(path: string, init?: RequestInit): Promise<Response> {
   const res = await fetch(`${config.nearAi.baseURL}${path}`, {
     ...init,
+    signal: AbortSignal.timeout(path.startsWith("/chat") ? 120_000 : 30_000),
     headers: {
       Authorization: `Bearer ${config.nearAi.apiKey}`,
       "Content-Type": "application/json",

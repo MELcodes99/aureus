@@ -81,11 +81,27 @@ export async function runCycle(log: (s: string) => void = console.log, opts: { d
   }
 
   log(`[strategist] ${config.mode === "mock" ? "simulated model (mock mode, no TEE)" : `private inference in NEAR AI Cloud TEE (${config.nearAi.model})`}`);
-  const s = await strategist(snap);
+  const t0 = Date.now();
+  let s;
+  try {
+    s = await strategist(snap);
+  } catch (e) {
+    const msg = (e as Error).name === "TimeoutError" ? "model did not answer within the time limit" : (e as Error).message;
+    log(`[strategist] failed: ${msg}`);
+    return done({ ...report, halted: `strategist error: ${msg}` });
+  }
+  log(`[strategist] answered in ${((Date.now() - t0) / 1000).toFixed(0)} s`);
   log(`[strategist] ${s.data.thesis} (confidence ${s.data.confidence})`);
 
   log(`[risk] ${config.mode === "mock" ? "simulated review" : "private review in TEE"} + mandate guard`);
-  const r = await risk(snap, s.data, g);
+  let r;
+  try {
+    r = await risk(snap, s.data, g);
+  } catch (e) {
+    const msg = (e as Error).name === "TimeoutError" ? "model did not answer within the time limit" : (e as Error).message;
+    log(`[risk] failed: ${msg}`);
+    return done({ ...report, thesis: s.data.thesis, confidence: s.data.confidence, halted: `risk error: ${msg}` });
+  }
   r.review.concerns.forEach((c) => log(`[risk] ${c}`));
   const proofs = [s.proof, r.proof];
   Object.assign(report, { thesis: s.data.thesis, confidence: s.data.confidence, concerns: r.review.concerns, targetWeights: r.finalWeights, proofs });
