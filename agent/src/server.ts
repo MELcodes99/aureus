@@ -27,6 +27,7 @@ import { wallet } from "./wallet.ts";
 import { listTokens, resolveAssets } from "./intents.ts";
 import * as confidential from "./confidential.ts";
 import { runCycle } from "./cycle.ts";
+import * as flows from "./flows.ts";
 
 const env = process.env;
 const ON_HOST = Boolean(env.RENDER || env.PORT);
@@ -118,6 +119,8 @@ async function status() {
     cycleRunning: busy,
     nextCycleAt: nextTickAt,
     navUsd: +navUsd.toFixed(2),
+    /** Performance with deposits and withdrawals taken out. Use this, not NAV change, for P&L. */
+    pnl: flows.pnl(navSeries(), navUsd),
     drawdownPct: g.drawdownPct,
     maxDrawdownPct: config.limits.maxDrawdownPct,
     spentTodayUsd: g.spentTodayUsd,
@@ -156,7 +159,14 @@ function cycles(limit: number) {
 
 /** NAV over time, oldest first, for the chart. */
 function navSeries() {
-  return readJsonl("cycles.jsonl").filter((c) => typeof c.navUsd === "number").map((c) => ({ at: c.at, navUsd: c.navUsd, drawdownPct: c.drawdownPct }));
+  const rows = readJsonl("cycles.jsonl").filter((c) => typeof c.navUsd === "number");
+  if (!rows.length) return [];
+  const first = rows[0];
+  // investedUsd: what the owner had put in by then. pnlUsd: NAV minus that, so deposits never look like profit.
+  return rows.map((c) => {
+    const investedUsd = first.navUsd + flows.netBetween(first.at, c.at);
+    return { at: c.at, navUsd: c.navUsd, drawdownPct: c.drawdownPct, investedUsd: +investedUsd.toFixed(2), pnlUsd: +(c.navUsd - investedUsd).toFixed(2) };
+  });
 }
 
 /** Price history recorded by the scout each cycle: [{ at, prices: { SYMBOL: usd } }]. */
@@ -275,7 +285,7 @@ async function route(req: IncomingMessage, res: ServerResponse) {
   const who = role(req);
   if (!who) return send(res, 401, { error: "missing or wrong token" });
   if (m === "GET" && p === "/api/whoami") return send(res, 200, { role: who });
-  const ownerOnly = m === "POST" && ["/api/cycle", "/api/pause", "/api/resume", "/api/anchor"].includes(p);
+  const ownerOnly = m === "POST" && ["/api/cycle", "/api/pause", "/api/resume", "/api/anchor", "/api/flow"].includes(p);
   if (ownerOnly && who !== "owner") return send(res, 403, { error: "read-only access: only the owner can do this" });
 
   if (m === "GET" && p === "/api/status") return send(res, 200, await status());
@@ -285,6 +295,17 @@ async function route(req: IncomingMessage, res: ServerResponse) {
   if (m === "GET" && p === "/api/cycles") return send(res, 200, cycles(Math.min(200, Number(url.searchParams.get("limit") ?? 50))));
   if (m === "GET" && p === "/api/nav") return send(res, 200, navSeries());
   if (m === "GET" && p === "/api/prices") return send(res, 200, prices(Math.min(500, Number(url.searchParams.get("limit") ?? 200))));
+  if (m === "GET" && p === "/api/flows") return send(res, 200, flows.all());
+  if (m === "POST" && p === "/api/flow") {
+    const b = await readJson(req);
+    const usd = Number(b.usd);
+    const at = typeof b.at === "string" && !Number.isNaN(Date.parse(b.at)) ? new Date(b.at).toISOString() : new Date().toISOString();
+    if (!Number.isFinite(usd) || usd === 0) return send(res, 400, { error: "usd must be a non-zero number (positive = deposit, negative = withdrawal)" });
+    flows.record({ at, usd, note: typeof b.note === "string" ? b.note.slice(0, 200) : "" });
+    // A withdrawal must lower the high-water mark, or the kill switch would read it as a loss.
+    if (usd < 0) guard.adjustForFlow(usd);
+    return send(res, 200, { ok: true, message: `recorded ${usd > 0 ? "deposit" : "withdrawal"} of $${Math.abs(usd).toFixed(2)}` });
+  }
   if (m === "GET" && p === "/api/attestation") return send(res, 200, await attestation());
   const d = p.match(/^\/api\/disclose\/(\d+)$/);
   if (m === "POST" && d) {

@@ -10,6 +10,7 @@ import { merkleRoot, sha256Hex } from "./crypto.ts";
 import * as confidential from "./confidential.ts";
 import { listTokens, requestQuote, resolveAssets, submitDeposit, swapStatus } from "./intents.ts";
 import { toUnits } from "./agents/scout.ts";
+import * as flows from "./flows.ts";
 
 async function asset(symbol: string) {
   const a = resolveAssets(config.universe, await listTokens()).find((x) => x.symbol.toLowerCase() === symbol.toLowerCase());
@@ -205,7 +206,11 @@ After that the agent cannot sign anything. Your funds stay in your wallet.`);
       await submitDeposit(dep, txHash);
       const fs = await waitFor(dep);
       console.log(`  ${fs}`);
-      if (fs === "SUCCESS") flow(Number(q.quote.amountInUsd) || 0, "in");
+      if (fs === "SUCCESS") {
+        const usd = Number(q.quote.amountInUsd) || 0;
+        flow(usd, "in");
+        console.log(`  ${await flows.reportToAgent({ at: new Date().toISOString(), usd, note: `fund ${amt} ${from.symbol}` })}`);
+      }
       break;
     }
     case "withdraw": {
@@ -225,7 +230,19 @@ After that the agent cannot sign anything. Your funds stay in your wallet.`);
       console.log(`  intent ${await confidential.signAndSubmit(dep)}`);
       const ws = await waitFor(dep);
       console.log(`  ${ws}`);
-      if (ws === "SUCCESS") flow(Number(q.quote.amountInUsd) || 0, "out");
+      if (ws === "SUCCESS") {
+        const usd = Number(q.quote.amountInUsd) || 0;
+        flow(usd, "out");
+        console.log(`  ${await flows.reportToAgent({ at: new Date().toISOString(), usd: -usd, note: `withdraw ${amt} ${a.symbol}` })}`);
+      }
+      break;
+    }
+    case "record-flow": {
+      const [usdArg, atArg, ...noteParts] = args;
+      const usd = Number(usdArg);
+      if (!Number.isFinite(usd) || usd === 0) throw new Error("usage: record-flow <usd> [ISO time] [note]   (negative = withdrawal)");
+      const at = atArg && !Number.isNaN(Date.parse(atArg)) ? new Date(atArg).toISOString() : new Date().toISOString();
+      console.log(await flows.reportToAgent({ at, usd, note: noteParts.join(" ") }));
       break;
     }
     case "disclose": {
