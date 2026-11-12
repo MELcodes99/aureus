@@ -92,7 +92,14 @@ export const config = {
   intents: {
     baseURL: env.ONECLICK_BASE_URL ?? "https://1click.chaindefuser.com/v0",
     /** Optional. Without a key 1Click charges a 0.2% fee. Register at partners.near-intents.org. */
-    apiKey: env.ONECLICK_API_KEY ?? "",
+    apiKey: (env.ONECLICK_API_KEY ?? "").trim(),
   },
 };
+
+/** 1Click auth header: a Partner Dashboard JWT goes in Authorization: Bearer, a plain API key in X-API-Key. */
+export function oneClickAuth(): Record<string, string> {
+  const k = config.intents.apiKey;
+  if (!k) return {};
+  return k.startsWith("eyJ") ? { Authorization: `Bearer ${k}` } : { "X-API-Key": k };
+}
 export type Config = typeof config;

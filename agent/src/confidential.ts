@@ -14,7 +14,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { Account, JsonRpcProvider, KeyPair, KeyPairSigner, actions, teraToGas } from "near-api-js";
 import { IntentsSDK, VersionedNonceBuilder, createIntentSignerNEP413 } from "@defuse-protocol/intents-sdk";
-import { config } from "./config.ts";
+import { config, oneClickAuth } from "./config.ts";
 
 const VERIFIER = "intents.near";
 
@@ -40,7 +40,7 @@ const intentsSdk = () =>
 
 function partnerHeaders(): Record<string, string> {
   if (!config.intents.apiKey) throw new Error("confidential mode needs ONECLICK_API_KEY (partners.near-intents.org)");
-  return { "Content-Type": "application/json", "X-API-Key": config.intents.apiKey };
+  return { "Content-Type": "application/json", ...oneClickAuth() };
 }
 
 async function post<T>(path: string, body: unknown, headers: Record<string, string>): Promise<T> {

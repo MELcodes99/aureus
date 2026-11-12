@@ -6,7 +6,7 @@
  * visible onchain. The wallet's own deposit and receipt are public transfers.
  * Quotes are dry (no deposit address) unless AUREUS_EXECUTE=true.
  */
-import { config, type Asset } from "./config.ts";
+import { config, oneClickAuth, type Asset } from "./config.ts";
 import { mockQuote, mockTokens } from "./mock.ts";
 
 export interface IntentsToken {
@@ -39,9 +39,7 @@ export interface QuoteResult {
 }
 
 function headers(): Record<string, string> {
-  const h: Record<string, string> = { "Content-Type": "application/json" };
-  if (config.intents.apiKey) h["X-API-Key"] = config.intents.apiKey;
-  return h;
+  return { "Content-Type": "application/json", ...oneClickAuth() };
 }
 
 export async function listTokens(): Promise<IntentsToken[]> {
