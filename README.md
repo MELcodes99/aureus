@@ -6,6 +6,43 @@ AUREUS is an autonomous AI portfolio manager on NEAR. You fund a trading wallet,
 
 Built at NEAR HACKATHON (1 to 14 Nov 2026). Tracks: `privacy`, `defi`, `agents`, `business`.
 
+## Live on NEAR mainnet
+
+AUREUS is running right now with real money, in fully private custody, cycling every 30 minutes on Render with a black and white owner dashboard.
+
+- Trading wallet: [`b241ebf3...dd6eb6`](https://nearblocks.io/address/b241ebf3f0859606527fd4799b9b4803b54d71a502007065031fe3cfaadd6eb6)
+- Custody: Confidential Intents (book held in NEAR's private shard)
+- Reasoning: `zai-org/GLM-5.1-FP8` in a NEAR AI Cloud TEE, signature verified on every call
+
+**First autonomous trades (13 Nov 2026).** The book was 85% wNEAR against a 30% single-asset cap and 9% stables against a 25% floor. The Strategist called it "a compliance rebalance, not churn" and the agent executed three private swaps in one cycle:
+
+| Swap | Size | Status |
+| --- | --- | --- |
+| wNEAR -> USDC | $10.80 | settled |
+| wNEAR -> USDT | $8.45 | settled |
+| wNEAR -> BTC | $6.04 | settled |
+
+| Private balance | Before | After |
+| --- | --- | --- |
+| wNEAR | $35.84 (85%) | $10.53 (25%) |
+| USDC | $3.98 | $14.71 |
+| USDT | $0.00 | $8.41 |
+| BTC | $2.40 | $8.41 |
+| **NAV** | **$42.23** | **$42.06** |
+
+Total cost of the rebalance, spread and price drift included: $0.17 (0.4%). None of the three swaps appears on the public chain.
+
+## Verify it yourself
+
+Four checks a judge can run without any of our keys.
+
+1. **The trades are invisible onchain.** Open the [trading wallet on NEAR Blocks](https://nearblocks.io/address/b241ebf3f0859606527fd4799b9b4803b54d71a502007065031fe3cfaadd6eb6). You will find the one public deposit into the private balance ([`AhVK6f...HDnT`](https://nearblocks.io/txns/AhVK6fn3D4kEtvy31mZjpzMj75Tej12TnM4QtvT5HDnT), 9.9 NEAR), at most one daily anchor transaction whose arguments are only a Merkle root and a count, and no transaction for any of the swaps above, although the dashboard shows them executed and the private balance changed.
+2. **The reasoning ran in an enclave.** In the dashboard, the Enclave page shows the model's attestation: Intel TDX and NVIDIA confidential GPU evidence, a fresh nonce, and the enclave signing address. Every cycle's Proofs entry records that the enclave's ECDSA signature over `sha256(request):sha256(response)` verified. Unverified reasoning is never acted on (`agent/src/nearai.ts`).
+3. **Every decision is committed before anyone can see it.** The Proofs page lists each private decision's sha256 commitment and the onchain Merkle anchor that covers it. Disclosing a decision reveals its full reasoning and recomputes the hash up to the anchored root: `MATCH`.
+4. **The AI cannot break the owner's limits.** Policy shows the mandate and caps. Try it offline: `AUREUS_SCENARIO=crash npm run demo` trips the drawdown kill switch, and `agent/test/guard.test.ts` covers caps, sizing and the stop.
+
+The dashboard needs a read-only viewer token, provided in our submission form. It can view everything and disclose decisions, but it cannot run cycles, pause, or move money.
+
 ## The problem
 
 An AI that manages money leaks your strategy twice:
@@ -20,6 +57,8 @@ An AI that manages money leaks your strategy twice:
 | Reasoning | NEAR AI Cloud private inference (Intel TDX + NVIDIA confidential GPU) | Mandate, holdings and thesis are only decrypted inside an enclave. For every call the agent fetches a fresh-nonce attestation, then checks the enclave's ECDSA signature over `sha256(request):sha256(response)`. Unverified reasoning is never acted on. |
 | Execution | NEAR Intents 1Click with `confidentiality: "advanced"` | Each swap is routed through NEAR's private shard, so the route and solver-side trail are not visible onchain. |
 | Custody | Your own NEAR wallet, two keys on it | You fund a wallet with only what the agent may trade and add the agent's key. You keep your seed phrase: withdraw any time, and deleting the agent's key is an instant onchain kill switch. |
+| Market view | Public market data (CoinGecko) + the agent's own price samples | The Strategist reasons over 24h / 7d / 30d trend, daily range and volume, follows an explicit framework (trend agreement, volatility sizing, regime, anti-churn) and writes a one-line reason per asset that is attached to each trade. Only public data is fetched, so nothing about the owner leaks. |
+| Accounting | `src/flows.ts` | Owner deposits and withdrawals are recorded separately, so P&L measures the agent, not the owner's top-ups. |
 | Limits | `src/guard.ts`, deterministic code | Max USD per trade, max USD per day, cooldown, and a drawdown kill switch checked before every trade. No LLM output can change them. |
 | Audit | sha256 commitment in each transfer's memo + encrypted journal | Every trade's `ft_transfer` carries `memo: "aureus:<sha256 of the private reasoning>"`. You can later prove any single decision with `disclose`, without revealing the others. |
 
@@ -92,7 +131,7 @@ npx tsx src/cli.ts fund wNEAR 1.5        # one public deposit into the private b
 # set "custody": "confidential" in aureus.config.json
 npm run cycle                            # private quotes; AUREUS_EXECUTE=true to trade
 npx tsx src/cli.ts private-balances      # readable only with a session your wallet key signs for
-npx tsx src/cli.ts history               # private trade history
+npx tsx src/cli.ts history               # private trade history (1Click: invite-only for now)
 npx tsx src/cli.ts withdraw wNEAR all    # one public payout back to the wallet
 ```
 
@@ -130,16 +169,21 @@ Known limit: the caps live in the agent's code, so they protect against bad deci
 
 ## Roadmap
 
-- Automatic daily anchoring.
 - Oracle-priced NAV for the drawdown switch.
-- Web dashboard.
+- Several owners per deployment, each with their own private book.
+- Backtests of the Strategist's framework against historical prices.
 
-## Repositoryagent/src/agents/ scout, strategist, risk, allocator, executor
+## Repository
+
+agent/src/agents/ scout, strategist, risk, allocator, executor
 agent/src/guard.ts owner limits and kill switch
+agent/src/market.ts public market context for the Strategist
+agent/src/flows.ts owner deposits and withdrawals, P&L baseline
+agent/src/server.ts dashboard API, autonomous loop, owner and viewer roles
 agent/src/wallet.ts trading wallet: wrap, transfer with commitment memo, anchors
 agent/src/nearai.ts NEAR AI Cloud client, attestation and signature verification
 agent/src/intents.ts 1Click client with Confidential Intents
-agent/src/confidential.ts private balance custody: NEP-413 signing, session auth, balances, history
+agent/src/confidential.ts private balance custody: NEP-413 signing, session auth, balances
 agent/src/journal.ts AES-256-GCM decision journal and Merkle anchors
 contracts/aureus-vault/ optional onchain policy vault
 
@@ -148,7 +192,7 @@ contracts/aureus-vault/ optional onchain policy vault
 
 - All code was written during NEAR HACKATHON (from 4 Nov 2026). No pre-hackathon code.
 - Libraries: near-api-js, @defuse-protocol/intents-sdk (versioned nonces, NEP-413 hashing), ethers (signature recovery), zod, dotenv, tsx, TypeScript; near-sdk, hex for the optional contract. Built with help from AI coding tools.
-- Integrations: NEAR AI Cloud, NEAR Intents 1Click (Confidential Intents), NEAR accounts and access keys.
+- Integrations: NEAR AI Cloud, NEAR Intents 1Click (Confidential Intents), NEAR accounts and access keys, CoinGecko public market data. Dashboard built with Lovable.
 
 ## License
 
