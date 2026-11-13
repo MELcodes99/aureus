@@ -14,6 +14,8 @@
  *   AUREUS_AUTORUN_MINUTES        run a cycle every N minutes (unset = no autonomous loop)
  *   AUREUS_ANCHOR_EVERY_HOURS     publish a Merkle anchor this often if there are new private decisions (default 24)
  *   AUREUS_SEED_B64               one-time import of an existing journal (see `export-state`)
+ *   AUREUS_PUBLIC_READ            "true" lets anyone with no token view the dashboard read-only.
+ *                                 Public visitors can only GET; they cannot disclose, run, pause or anchor.
  */
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -47,12 +49,30 @@ function tokenIs(got: Buffer, token: string): boolean {
   return got.length === want.length && timingSafeEqual(got, want);
 }
 
-function role(req: IncomingMessage): "owner" | "viewer" | null {
+const PUBLIC_READ = env.AUREUS_PUBLIC_READ === "true";
+
+/** owner: everything. viewer: read + disclose. public (no token, if enabled): read only. A wrong token is never public. */
+function role(req: IncomingMessage): "owner" | "viewer" | "public" | null {
   const h = req.headers.authorization ?? "";
-  const got = Buffer.from(h.startsWith("Bearer ") ? h.slice(7) : "");
+  const raw = h.startsWith("Bearer ") ? h.slice(7).trim() : "";
+  if (!raw) return PUBLIC_READ ? "public" : null;
+  const got = Buffer.from(raw);
   if (tokenIs(got, TOKEN)) return "owner";
   if (VIEWER && tokenIs(got, VIEWER)) return "viewer";
   return null;
+}
+
+/** Short caches so dashboard traffic cannot hammer 1Click, NEAR RPC or NEAR AI credits. */
+function cached<T>(ms: number, fn: () => Promise<T>): () => Promise<T> {
+  let at = 0;
+  let value: Promise<T> | null = null;
+  return () => {
+    if (!value || Date.now() - at > ms) {
+      at = Date.now();
+      value = fn().catch((e) => { value = null; throw e; });
+    }
+    return value;
+  };
 }
 
 function send(res: ServerResponse, code: number, body: unknown) {
@@ -217,6 +237,10 @@ async function attestation() {
   };
 }
 
+const statusCached = cached(20_000, status);
+// A fresh attestation costs a NEAR AI call; ten minutes is plenty for a dashboard.
+const attestationCached = cached(10 * 60_000, attestation);
+
 // One cycle at a time, whether started by the loop or the dashboard.
 let busy = false;
 async function cycle(dryRun: boolean) {
@@ -285,10 +309,11 @@ async function route(req: IncomingMessage, res: ServerResponse) {
   const who = role(req);
   if (!who) return send(res, 401, { error: "missing or wrong token" });
   if (m === "GET" && p === "/api/whoami") return send(res, 200, { role: who });
+  if (who === "public" && m !== "GET") return send(res, 403, { error: "public view is read-only: sign in with a token to do this" });
   const ownerOnly = m === "POST" && ["/api/cycle", "/api/pause", "/api/resume", "/api/anchor", "/api/flow"].includes(p);
   if (ownerOnly && who !== "owner") return send(res, 403, { error: "read-only access: only the owner can do this" });
 
-  if (m === "GET" && p === "/api/status") return send(res, 200, await status());
+  if (m === "GET" && p === "/api/status") return send(res, 200, await statusCached());
   if (m === "GET" && p === "/api/cycle/last") return send(res, 200, readOr("last-cycle.json", null));
   if (m === "GET" && p === "/api/trades") return send(res, 200, trades());
   if (m === "GET" && p === "/api/anchors") return send(res, 200, anchors());
@@ -306,7 +331,7 @@ async function route(req: IncomingMessage, res: ServerResponse) {
     if (usd < 0) guard.adjustForFlow(usd);
     return send(res, 200, { ok: true, message: `recorded ${usd > 0 ? "deposit" : "withdrawal"} of $${Math.abs(usd).toFixed(2)}` });
   }
-  if (m === "GET" && p === "/api/attestation") return send(res, 200, await attestation());
+  if (m === "GET" && p === "/api/attestation") return send(res, 200, await attestationCached());
   const d = p.match(/^\/api\/disclose\/(\d+)$/);
   if (m === "POST" && d) {
     const out = await disclose(d[1]);
